@@ -1,69 +1,121 @@
 import streamlit as st
 import os
-from utils.save_docs import save_docs_to_vectordb
 from utils.session_state import initialize_session_state_variables
 from utils.prepare_vectordb import get_vectorstore
 from utils.chatbot import chat
+from utils.email_sender import send_order_email
 
-class ChatApp:
+class ProductChatApp:
     """
-    A Streamlit application for chatting with PDF documents
-
-    This class encapsulates the functionality for uploading PDF documents, processing them,
-    and enabling users to chat with the documents using a chatbot. It handles the initialization
-    of Streamlit configurations and session state variables, as well as the frontend for document
-    upload and chat interaction
+    A Streamlit application for chatting with product data.
     """
     def __init__(self):
         """
-        Initializes the ChatApp class
-
-        This method ensures the existence of the 'docs' folder, sets Streamlit page configurations,
-        and initializes session state variables
+        Initializes the application, sets page config, and session state.
         """
-        # Ensure the docs folder exists
+        st.set_page_config(page_title="Чат-бот Консультант", page_icon=":robot_face:")
+        st.title("Чат-бот Консультант по товарам :shopping_bags:")
+        initialize_session_state_variables(st)
+
+    def _save_uploaded_file(self, uploaded_file):
+        """Saves a single uploaded file to the 'docs' directory."""
         if not os.path.exists("docs"):
             os.makedirs("docs")
-
-        # Configurations and session state initialization
-        st.set_page_config(page_title="Chat with PDFS :books:")
-        st.title("Chat with PDFS :books:")
-        initialize_session_state_variables(st)
-        self.docs_files = st.session_state.processed_documents
+        file_path = os.path.join("docs", uploaded_file.name)
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getvalue())
+        return file_path
 
     def run(self):
         """
-        Runs the Streamlit app for chatting with PDFs
-
-        This method handles the frontend for document upload, unlocks the chat when documents are uploaded,
-        and locks the chat until documents are uploaded
+        Runs the main application logic for the Streamlit UI.
         """
-        upload_docs = os.listdir("docs")
-        # Sidebar frontend for document upload
+        # Sidebar for data upload and management
         with st.sidebar:
-            st.subheader("Your documents")
-            if upload_docs:
-                st.write("Uploaded Documents:")
-                st.text(", ".join(upload_docs))
-            else:
-                st.info("No documents uploaded yet.")
-            st.subheader("Upload PDF documents")
-            pdf_docs = st.file_uploader("Select a PDF document and click on 'Process'", type=['pdf'], accept_multiple_files=True)
-            if pdf_docs:
-                save_docs_to_vectordb(pdf_docs, upload_docs)
+            st.subheader("Управление данными")
 
-        # Unlocks the chat when document is uploaded
-        if self.docs_files or st.session_state.uploaded_pdfs:
-            # Check to see if a new document was uploaded to update the vectordb variable in the session state
-            if len(upload_docs) > st.session_state.previous_upload_docs_length:
-                st.session_state.vectordb = get_vectorstore(upload_docs, from_session_state=True)
-                st.session_state.previous_upload_docs_length = len(upload_docs)
+            # File uploaders
+            xml_files = st.file_uploader(
+                "Загрузите XML файлы с товарами",
+                type=['xml'],
+                accept_multiple_files=True,
+                key="xml_uploader"
+            )
+            price_file = st.file_uploader(
+                "Загрузите прайс-лист (CSV/XLSX)",
+                type=['csv', 'xlsx'],
+                accept_multiple_files=False,
+                key="price_uploader"
+            )
+
+            # Determine if processing is possible
+            can_process = (xml_files or st.session_state.get("processed_xmls")) and \
+                          (price_file or st.session_state.get("processed_price_file"))
+
+            if can_process:
+                if st.button("Обработать данные"):
+                    with st.spinner("Обработка файлов..."):
+                        # Save new files and update session state
+                        if xml_files:
+                            # If new XMLs are uploaded, we replace the old list
+                            st.session_state.processed_xmls = []
+                            for f in xml_files:
+                                self._save_uploaded_file(f)
+                                st.session_state.processed_xmls.append(f.name)
+
+                        if price_file:
+                            self._save_uploaded_file(price_file)
+                            st.session_state.processed_price_file = price_file.name
+
+                        # Re-create vector store
+                        xml_paths = [os.path.join("docs", f) for f in st.session_state.processed_xmls]
+                        price_path = os.path.join("docs", st.session_state.processed_price_file)
+
+                        st.session_state.vectordb = get_vectorstore(xml_paths, price_path, from_session_state=False)
+                        st.success("Данные успешно обработаны!")
+                        st.rerun()
+
+            # Display currently processed files
+            st.markdown("---")
+            st.write("Активные файлы данных:")
+            if st.session_state.get("processed_xmls"):
+                st.write("Товары (XML):")
+                st.json(st.session_state.processed_xmls, expanded=False)
+            if st.session_state.get("processed_price_file"):
+                st.write("Прайс-лист:")
+                st.info(st.session_state.processed_price_file)
+
+            # Order form
+            st.markdown("---")
+            st.subheader("Оформить заказ")
+            with st.form("order_form", clear_on_submit=True):
+                name = st.text_input("Ваше имя")
+                email = st.text_input("Email для уведомления")
+                order_file = st.file_uploader("Загрузите файл заказа (CSV/JSON/XML)")
+                submitted = st.form_submit_button("Отправить заказ")
+
+                if submitted:
+                    if name and email and order_file:
+                        # Call the email sending function
+                        success, message = send_order_email(
+                            name=name,
+                            client_email=email,
+                            order_file_name=order_file.name,
+                            order_file_content=order_file.getvalue()
+                        )
+                        if success:
+                            st.success(f"Заказ от {name} успешно отправлен! Мы скоро свяжемся с вами.")
+                        else:
+                            st.error(f"Не удалось отправить заказ. {message}")
+                    else:
+                        st.error("Пожалуйста, заполните все поля и прикрепите файл заказа.")
+
+        # Main chat interface
+        if st.session_state.get("vectordb"):
             st.session_state.chat_history = chat(st.session_state.chat_history, st.session_state.vectordb)
-
-        # Locks the chat until a document is uploaded
-        if not self.docs_files and not st.session_state.uploaded_pdfs:
-            st.info("Upload a pdf file to chat with it. You can keep uploading files to chat with, and if you need to leave, you won't need to upload these files again")
+        else:
+            st.info("Пожалуйста, загрузите XML-файлы с товарами и прайс-лист в меню слева, а затем нажмите 'Обработать данные', чтобы начать чат.")
 
 if __name__ == "__main__":
-    app = ChatApp()
+    app = ProductChatApp()
     app.run()

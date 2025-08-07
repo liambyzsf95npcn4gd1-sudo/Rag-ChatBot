@@ -23,7 +23,7 @@ def get_context_retriever_chain(vectordb):
     llm = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.2, convert_system_message_to_human=True)
     retriever = vectordb.as_retriever()
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are a chatbot. You'll receive a prompt that includes a chat history and retrieved content from the vectorDB based on the user's question. Your task is to respond to the user's question using the information from the vectordb, relying as little as possible on your own knowledge. If for some reason you don't know the answer for the question, or the question cannot be answered because there's no context, ask the user for more details. Do not invent an answer. Answer the questions from this context: {context}"),
+        ("system", "Ты — консультант. У тебя есть история чата и документы по товарам. Отвечай, опираясь ТОЛЬКО на этот контекст. Если нет информации — уточняй. Отвечай на русском языке. Контекст: {context}"),
         MessagesPlaceholder(variable_name="chat_history"),
         ("human", "{input}")
     ])
@@ -68,12 +68,18 @@ def chat(chat_history, vectordb):
         chat_history = chat_history + [HumanMessage(content=user_query), AIMessage(content=response)]
         # Display source of the response on sidebar
         with st.sidebar:
-                metadata_dict = defaultdict(list)
-                for metadata in [doc.metadata for doc in context]:
-                    metadata_dict[metadata['source']].append(metadata['page'])
-                for source, pages in metadata_dict.items():
-                    st.write(f"Source: {source}")
-                    st.write(f"Pages: {', '.join(map(str, pages))}")
+            st.subheader("Источники ответа:")
+            # Use a set to store unique product names to avoid duplicates
+            source_products = set()
+            for doc in context:
+                if 'product_name' in doc.metadata:
+                    source_products.add(doc.metadata['product_name'])
+
+            if source_products:
+                for product_name in sorted(list(source_products)):
+                    st.info(product_name)
+            else:
+                st.info("Источник не определен.")
     # Display chat history
     for message in chat_history:
             with st.chat_message("AI" if isinstance(message, AIMessage) else "Human"):

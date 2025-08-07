@@ -1,12 +1,13 @@
-# RAG - ChatBot: Retrieval Augmented Generation (RAG) chatbot using Google's Gemini-Pro model, Langchain, ChromaDB, and Streamlit
+# Чат-бот Консультант по товарам
 
-This RAG-ChatBot is a Python application that allows the user to chat with multiple PDF documents. You ask questions in natural language, in the same way as if you were to ask a human, and the application will provide relevant responses based on the content of the uploaded documents. This app uses Google's Gemini-Pro model to generate accurate answers to your questions, but the model will only answer questions that are about the uploaded documents.
-Here are some key points about the project:
-- Upload Documents: When the app is launched, you can upload a PDF document and chat with the document on the fly, no need to reload the app
-- Offline Documents: If you need to leave the app, when you come back, you won't need to upload the same document again, you can chat with it as soon as the app starts. Also, you can keep uploading documents to chat with all of them at the same time
-- The user interface was crafted with streamlit, with the goal of displaying all necessary information while being extremely simple. The user only has the "upload" button, all the rest is automated by the app
-- The model incorporates the chat history, retaining up to 10 users questions and model responses, so if you ask about something and want more details, you can just say "give me more details about that" and the model will know what you are reffering to
-- For each response, you can check the source in the sidebar, making sure that the model is not making up responses
+Это приложение представляет собой чат-бота-консультанта, созданного с использованием Google Gemini-Pro, Langchain, ChromaDB и Streamlit. Бот позволяет пользователям получать консультации по ассортименту товаров, задавая вопросы на естественном языке. Он извлекает информацию из предоставленных XML-файлов с данными о товарах и прайс-листа, а также позволяет оформлять заказы.
+
+Ключевые особенности проекта:
+- **Загрузка данных**: Пользователь может загрузить XML-файлы с описанием товаров и прайс-лист в формате CSV или XLSX.
+- **Консультации по товарам**: Бот отвечает на вопросы, основываясь исключительно на загруженных данных о товарах, их характеристиках и ценах.
+- **Оформление заказа**: В интерфейсе предусмотрена форма для отправки заказа, которая включает прикрепление файла с заказом и отправку уведомлений по электронной почте.
+- **Интерактивный интерфейс**: Пользовательский интерфейс, созданный с помощью Streamlit, прост в использовании и включает в себя чат, загрузчики файлов и форму заказа.
+- **Отслеживание источников**: Для каждого ответа бота в боковой панели отображаются товары, информация о которых была использована.
 
 ## RAG - ChatBot Interface: First Boot and In Usage
 The very first time the user launches the app, this will be the screen of the app. Note that the user cannot send any messages, since there are no documents uploaded.
@@ -17,35 +18,43 @@ The next time that the user launches the app, the chat box will be available and
 
 ![app_in_use](Images/app_in_use.png)
 
-## How it Works
+## Как это работает
 
-![project_schema](Images/project_schema.png)
+Основной цикл работы приложения выглядит следующим образом: пользователь загружает данные, задает вопрос, приложение ищет релевантную информацию в векторной базе данных, и эта информация передается большой языковой модели (LLM) для генерации ответа.
 
-The main functionality of the app is the loop on the right side of the image. The user asks a question, the app searches for the best response in the database, and the content retrieved from the database is passed to the Large Language Model (LLM), which generates a response based on the question, chat history and content from the database. Here's a more detailed step-by-step of what happens:
-1. Upload PDF: If it's the very first time the app is launched, the user will need to upload a document to chat with. The app checks for a folder called "docs", and creates one if it doesn't exist. All PDF documents will be saved into this folder
-2. Text Chunking: The app extracts the text from the PDF and separates it into chunks of text, with the size being measured by the limit of tokens the embedding model can handle per chunk
-3. Embedding and Saving: These chunks of text pass through an embedding model, that generates vector representations of n dimensions of each text chunk. After that, all vectors are stored in a vector database. In this app, ChromaDB is being used, so that the vectordb is stored in disk, and the app creates a folder called "Vector_DB - Documents", to be the base folder of the database
-4. Similarity Matching: When you ask a question, it is appended to the chat history. Also, the text that you used goes through the same embedding model that the chunks did, creating a vector representation of your question. With this, the app compares it with the text chunks and identifies the most semantically similar ones. It does this by using a distance metric, like the cosine similarity, which measures how close the angles between the vectors are. The closer the angles, the higher the similarity between the vectors
-5. Response Generation: The selected chunks are passed to the language model, which generates a response based on the relevant content of the PDFs, the user question and the chat history. When the LLM outputs the answer, it is appended to the chat history, so the model can use this to have context of the conversation itself, and not only of the documents, since the chat history is composed of users questions and the models answers
-
-When the app gets initialized and there's already processed documents, steps 1-3 are skipped, and the user can automatically chat with these already processed PDFs. The option to upload a PDF is always available, so when the user does upload a new file, the app does steps 1-3 while a "processing" message appears in the sidebar, and the vector database gets updated with the new document. This way, there's no need for a "manual" mode, where the user can only upload a new file, making the usage of the app easier. 
+1.  **Загрузка данных**: Пользователь загружает XML-файлы с товарами и прайс-лист (CSV/XLSX) через интерфейс. Эти файлы сохраняются в директорию `docs`.
+2.  **Парсинг и объединение**: Приложение парсит XML-файлы для извлечения данных о товарах (ID, название, описание, характеристики) и прайс-лист для получения цен. Затем эти данные объединяются для каждого товара.
+3.  **Создание документов и эмбеддингов**: Для каждого товара формируется единый текстовый документ. Этот текст преобразуется в векторное представление (эмбеддинг) с помощью модели `GoogleGenerativeAIEmbeddings`.
+4.  **Сохранение в векторную базу**: Полученные эмбеддинги сохраняются в локальную векторную базу данных `ChromaDB` в директории `Vector_DB_Products`. При последующих запусках приложение будет использовать уже существующую базу.
+5.  **Поиск по сходству**: Когда пользователь задает вопрос, он также преобразуется в вектор. Приложение сравнивает этот вектор с векторами в базе данных и находит наиболее семантически близкие документы (товары).
+6.  **Генерация ответа**: Найденные документы вместе с историей чата и вопросом пользователя передаются модели `Gemini-Pro`, которая генерирует развернутый ответ на основе предоставленного контекста.
+7.  **Отправка заказа**: При заполнении формы заказа приложение использует модуль `smtplib` для отправки писем менеджеру и клиенту.
 
 ## App Usage
 To install and use the app, an API key from Google will be needed. For this, you can click [here](https://aistudio.google.com/app/apikey). Accept the terms, and if the option to create an API key is not selectable, just reload the page. Click on "Create API Key" and then click on "Create API key in new project" and copy the key. It's recommended to paste the key into a new txt file or something, so you have easy access.
 Also, to use the app, it's assumed that you have python installed
 
-### Step 1: Create .env file
-Copy this repo or download the files as a zip and extract it. Navigate to the folder where the files README and requirements are located. You will see the app folder too. Create a new txt file and paste this: 
+### Шаг 1: Создайте файл .env
+В корневой директории проекта создайте файл с именем `.env`. Этот файл будет содержать ваши секретные ключи и настройки. Скопируйте в него следующий шаблон и подставьте свои значения.
 
-```shell
-GOOGLE_API_KEY = "apikey"
+```env
+# Ключ для доступа к Google Gemini API
+GOOGLE_API_KEY = "ВАШ_API_КЛЮЧ_GOOGLE"
+
+# Настройки для отправки почты через SMTP
+SMTP_HOST = "smtp.example.com"
+SMTP_PORT = 587
+SMTP_USER = "your_email@example.com"
+SMTP_PASS = "your_email_password"
+
+# Email менеджера для получения заказов
+MANAGER_EMAIL = "manager@example.com"
 ```
 
-Now, paste the API key that you generated into the quotation marks. It should look something like this: GOOGLE_API_KEY = "AIzaSyCJOZtTkyN9rfuXEjTtngeubYTUne"
-
-Save the file as an environment file, with .env as the name. To do this, when saving the file, click on Type and choose "Unknown(*.). Make sure that the name of the file is .env
-
-When the file is saved, you should see a file named .env with type "Environment File" in the folder, together with the README and requirements files
+**Важно:**
+-   Замените `ВАШ_API_КЛЮЧ_GOOGLE` на ваш реальный ключ от Google AI Studio.
+-   Укажите корректные данные вашего SMTP-сервера для отправки почты.
+-   `MANAGER_EMAIL` — это адрес, на который будут приходить уведомления о новых заказах.
 
 ### Step 2: Install Packages
 Open a terminal in this folder. You can do this by holding the shift key on the keyboard and right-clicking on the screen. An option to open a terminal should appear. In the terminal, write this to install all the requirements for the app:

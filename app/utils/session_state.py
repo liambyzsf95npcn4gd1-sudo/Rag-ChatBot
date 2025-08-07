@@ -1,28 +1,44 @@
 import os
 from utils.prepare_vectordb import get_vectorstore
 
+def get_file_paths(directory):
+    """
+    Scans a directory and categorizes files into XMLs and a price list.
+    """
+    if not os.path.exists(directory):
+        return [], None
+
+    all_files = os.listdir(directory)
+    xml_files = [f for f in all_files if f.endswith('.xml')]
+    price_file = next((f for f in all_files if f.endswith(('.csv', '.xlsx'))), None)
+    return xml_files, price_file
+
 def initialize_session_state_variables(st):
     """
-    Initialize session state variables for the Streamlit application
-
-    Parameters:
-    - st (streamlit.delta_generator.DeltaGenerator): Streamlit's DeltaGenerator object used for rendering elements
+    Initialize session state variables for the Streamlit application.
     """
-    # Get the list of uploaded documents
-    upload_docs = os.listdir("docs")
-    # List of session state variables to initialize
-    variables_to_initialize = ["chat_history", "uploaded_pdfs", "processed_documents", "vectordb", "previous_upload_docs_length"]
-    # Iterate over the variables and initializes them if not present in the session state 
-    for variable in variables_to_initialize:
-        if variable not in st.session_state:
-            if variable == "processed_documents":
-                # Set to the name of the files present in the docs folder
-                st.session_state.processed_documents = upload_docs
-            elif variable == "vectordb":
-                # Is set to none if its the first time the app is initialized. If not, is set to the vector database that already exists
-                st.session_state.vectordb = get_vectorstore(upload_docs, from_session_state=True)
-            elif variable == "previous_upload_docs_length":
-                # Set to the quantity of documents in the docs folder during app startup
-                st.session_state.previous_upload_docs_length = len(upload_docs)
-            else:
-                st.session_state[variable] = []
+    processed_xmls, processed_price_file = get_file_paths("docs")
+
+    # Centralized session state initialization
+    defaults = {
+        "chat_history": [],
+        "processed_xmls": processed_xmls,
+        "processed_price_file": processed_price_file,
+        "vectordb": None,
+        "previous_file_count": len(processed_xmls) + (1 if processed_price_file else 0)
+    }
+
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+    # Special handling for vectordb initialization
+    if st.session_state.vectordb is None:
+        if processed_xmls and processed_price_file:
+            # Note: get_vectorstore expects full paths, but we store only filenames in session state
+            # The calling function in app.py will be responsible for constructing full paths
+            st.session_state.vectordb = get_vectorstore(
+                product_xml_paths=[os.path.join("docs", f) for f in processed_xmls],
+                price_file_path=os.path.join("docs", processed_price_file),
+                from_session_state=True
+            )
