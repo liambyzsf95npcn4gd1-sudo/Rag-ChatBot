@@ -1,19 +1,29 @@
 import os
 import smtplib
+import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from dotenv import load_dotenv
 
+def sanitize_input(text):
+    """Removes newlines and other control characters from a string."""
+    return re.sub(r'[\r\n\t]', '', text).strip()
+
 def send_order_email(name, client_email, order_file_name, order_file_content):
     """
     Sends two emails: one to the manager with the order details and attachment,
-    and a confirmation to the client.
+    and a confirmation to the client. Inputs are sanitized.
 
     Returns:
         bool: True if emails were sent successfully, False otherwise.
         str: A message indicating success or failure.
     """
+    # Sanitize all string inputs as a security measure
+    name = sanitize_input(name)
+    client_email = sanitize_input(client_email)
+    order_file_name = sanitize_input(order_file_name)
+
     load_dotenv()
 
     # Load SMTP configuration from .env file

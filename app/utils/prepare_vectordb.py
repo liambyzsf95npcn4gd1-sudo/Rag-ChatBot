@@ -1,3 +1,4 @@
+import streamlit as st
 import os
 import xmltodict
 import pandas as pd
@@ -9,7 +10,7 @@ from dotenv import load_dotenv
 
 def parse_xml_files(xml_files):
     """
-    Parses multiple XML files and extracts product data.
+    Parses multiple XML files and extracts product data with basic validation.
 
     Args:
         xml_files (list): A list of paths to XML files.
@@ -22,14 +23,30 @@ def parse_xml_files(xml_files):
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
                 data = xmltodict.parse(file.read())
+
+                # Basic validation: Check for top-level product container
                 if 'products' in data and 'product' in data['products']:
                     product_list = data['products']['product']
-                    if isinstance(product_list, list):
-                        products.extend(product_list)
-                    else:
-                        products.append(product_list)
+                    # Ensure product_list is a list
+                    if not isinstance(product_list, list):
+                        product_list = [product_list]
+
+                    for p in product_list:
+                        if isinstance(p, dict) and 'product_id' in p:
+                            products.append(p)
+                        else:
+                            print(f"Warning: Skipping malformed product entry in {file_path}")
+
                 elif 'product' in data:
-                    products.append(data['product'])
+                    # Handle case where root is a single product
+                    product_entry = data['product']
+                    if isinstance(product_entry, dict) and 'product_id' in product_entry:
+                        products.append(product_entry)
+                    else:
+                        print(f"Warning: Skipping malformed single product entry in {file_path}")
+                else:
+                    print(f"Warning: No 'products' or 'product' tag found in {file_path}. Skipping file.")
+
         except Exception as e:
             print(f"Error parsing XML file {file_path}: {e}")
     return products
@@ -107,34 +124,49 @@ def get_text_chunks(docs):
     chunks = text_splitter.split_documents(docs)
     return chunks
 
-def get_vectorstore(product_xml_paths, price_file_path, from_session_state=False):
+import streamlit as st
+
+# (keeping other imports as they are)
+
+@st.cache_resource
+def load_vectorstore():
     """
-    Create or retrieve a vectorstore from product data.
+    Loads the vectorstore from disk. Uses Streamlit's caching to avoid reloading.
     """
     load_dotenv()
     embedding = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     persist_directory = "Vector_DB_Products"
 
-    if from_session_state and os.path.exists(persist_directory):
+    if os.path.exists(persist_directory):
+        print("Loading cached vectorstore from disk.")
         vectordb = Chroma(persist_directory=persist_directory, embedding_function=embedding)
         return vectordb
-
-    # This condition ensures we only build the DB if we have the necessary files.
-    elif not from_session_state and product_xml_paths and price_file_path:
-        products_data = parse_xml_files(product_xml_paths)
-        price_data = parse_price_list(price_file_path)
-
-        if not products_data:
-            return None # No products found, no DB to create
-
-        documents = create_product_documents(products_data, price_data)
-        chunks = get_text_chunks(documents)
-
-        vectordb = Chroma.from_documents(
-            documents=chunks,
-            embedding=embedding,
-            persist_directory=persist_directory
-        )
-        return vectordb
-
     return None
+
+def create_vectorstore(product_xml_paths, price_file_path):
+    """
+    Creates a new vectorstore and returns it along with the parsed product data.
+    """
+    load_dotenv()
+    embedding = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    persist_directory = "Vector_DB_Products"
+
+    products_data = parse_xml_files(product_xml_paths)
+    price_data = parse_price_list(price_file_path)
+
+    if not products_data:
+        print("No product data found. Vectorstore not created.")
+        return None, None
+
+    documents = create_product_documents(products_data, price_data)
+    chunks = get_text_chunks(documents)
+
+    print("Creating new vectorstore...")
+    vectordb = Chroma.from_documents(
+        documents=chunks,
+        embedding=embedding,
+        persist_directory=persist_directory
+    )
+    # Clear the cache for the loader function, so it reloads the new DB on the next run
+    load_vectorstore.clear()
+    return vectordb, products_data

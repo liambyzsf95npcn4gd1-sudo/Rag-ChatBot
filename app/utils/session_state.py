@@ -1,5 +1,5 @@
 import os
-from utils.prepare_vectordb import get_vectorstore
+from utils.prepare_vectordb import load_vectorstore
 
 def get_file_paths(directory):
     """
@@ -34,11 +34,5 @@ def initialize_session_state_variables(st):
 
     # Special handling for vectordb initialization
     if st.session_state.vectordb is None:
-        if processed_xmls and processed_price_file:
-            # Note: get_vectorstore expects full paths, but we store only filenames in session state
-            # The calling function in app.py will be responsible for constructing full paths
-            st.session_state.vectordb = get_vectorstore(
-                product_xml_paths=[os.path.join("docs", f) for f in processed_xmls],
-                price_file_path=os.path.join("docs", processed_price_file),
-                from_session_state=True
-            )
+        # On startup, we just try to load a cached vectordb if it exists.
+        st.session_state.vectordb = load_vectorstore()
