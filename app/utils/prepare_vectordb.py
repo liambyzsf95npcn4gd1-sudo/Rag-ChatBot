@@ -45,7 +45,7 @@ def get_text_chunks(docs):
     chunks = text_splitter.split_documents(docs)
     return chunks
 
-def get_vectorstore(docs_files, google_api_key, persist_directory, from_session_state=False):
+def get_vectorstore(google_api_key, persist_directory, docs_files=None, documents=None, from_session_state=False):
     """
     Create or retrieve a vectorstore from documents.
 
@@ -66,14 +66,17 @@ def get_vectorstore(docs_files, google_api_key, persist_directory, from_session_
         return vectordb
     elif not from_session_state:
         logging.info("Creating new vector store.")
-        docs = extract_text(docs_files)
-        chunks = get_text_chunks(docs)
-        try:
-            # Create vectorstore from chunks and saves it to the folder Vector_DB - Documents
-            logging.info("Embedding documents.")
-            vectordb = Chroma.from_documents(documents=chunks, embedding=embedding, persist_directory=str(persist_dir))
-            return vectordb
-        except Exception as e:
-            logging.exception("Embedding error")
-            raise RuntimeError("Error creating embedding -- check API key and network") from e
+        if documents is None and docs_files is not None:
+            documents = extract_text(docs_files)
+
+        if documents is not None:
+            chunks = get_text_chunks(documents)
+            try:
+                # Create vectorstore from chunks and saves it to the folder Vector_DB - Documents
+                logging.info("Embedding documents.")
+                vectordb = Chroma.from_documents(documents=chunks, embedding=embedding, persist_directory=str(persist_dir))
+                return vectordb
+            except Exception as e:
+                logging.exception("Embedding error")
+                raise RuntimeError("Error creating embedding -- check API key and network") from e
     return None
