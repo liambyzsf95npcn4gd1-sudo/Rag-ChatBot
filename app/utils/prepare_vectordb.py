@@ -1,25 +1,39 @@
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader, UnstructuredXMLLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
-from dotenv import load_dotenv
 import os
+import xml.etree.ElementTree as ET
+import logging
 
-def extract_pdf_text(pdfs):
+def parse_product_xml(path):
+    tree = ET.parse(path)
+    root = tree.getroot()
+    items = []
+    for prod in root.findall(".//product"):
+        prod_id = prod.findtext("id") or prod.get("id")
+        name = prod.findtext("name") or ""
+        desc = prod.findtext("description") or ""
+        items.append({"id": prod_id, "name": name.strip(), "description": desc.strip()})
+    return items
+
+def extract_text(docs_files):
     """
-    Extract text from PDF documents
+    Extract text from PDF and XML documents.
 
     Parameters:
-    - pdfs (list): List of PDF documents
+    - docs_files (list): List of document filenames.
 
     Returns:
-    - docs: List of text extracted from PDF documents
+    - docs: List of text extracted from the documents.
     """
     docs = []
-    for pdf in pdfs:
-        pdf_path = os.path.join("docs", pdf)
-        # Load text from the PDF and extend the list of documents
-        docs.extend(PyPDFLoader(pdf_path).load())
+    for doc_file in docs_files:
+        file_path = os.path.join("docs", doc_file)
+        if doc_file.endswith(".pdf"):
+            docs.extend(PyPDFLoader(file_path).load())
+        elif doc_file.endswith(".xml"):
+            docs.extend(UnstructuredXMLLoader(file_path).load())
     return docs
 
 def get_text_chunks(docs):
@@ -37,27 +51,32 @@ def get_text_chunks(docs):
     chunks = text_splitter.split_documents(docs)
     return chunks
 
-def get_vectorstore(pdfs, from_session_state=False):
+def get_vectorstore(docs_files, from_session_state=False):
     """
-    Create or retrieve a vectorstore from PDF documents
+    Create or retrieve a vectorstore from documents.
 
     Parameters:
-    - pdfs (list): List of PDF documents
-    - from_session_state (bool, optional): Flag indicating whether to load from session state. Defaults to False
+    - docs_files (list): List of document filenames.
+    - from_session_state (bool, optional): Flag indicating whether to load from session state. Defaults to False.
 
     Returns:
-    - vectordb or None: The created or retrieved vectorstore. Returns None if loading from session state and the database does not exist
+    - vectordb or None: The created or retrieved vectorstore. Returns None if loading from session state and the database does not exist.
     """
-    load_dotenv()
     embedding = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     if from_session_state and os.path.exists("Vector_DB - Documents"):
         # Retrieve vectorstore from existing one
         vectordb = Chroma(persist_directory="Vector_DB - Documents", embedding_function=embedding)
         return vectordb
     elif not from_session_state:
-        docs = extract_pdf_text(pdfs)
+        logging.info("Creating new vector store.")
+        docs = extract_text(docs_files)
         chunks = get_text_chunks(docs)
-        # Create vectorstore from chunks and saves it to the folder Vector_DB - Documents
-        vectordb = Chroma.from_documents(documents=chunks, embedding=embedding, persist_directory="Vector_DB - Documents")
-        return vectordb
+        try:
+            # Create vectorstore from chunks and saves it to the folder Vector_DB - Documents
+            logging.info("Embedding documents.")
+            vectordb = Chroma.from_documents(documents=chunks, embedding=embedding, persist_directory="Vector_DB - Documents")
+            return vectordb
+        except Exception as e:
+            logging.exception("Embedding error")
+            raise RuntimeError("Error creating embedding -- check API key and network") from e
     return None

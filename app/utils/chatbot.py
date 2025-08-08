@@ -5,7 +5,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from dotenv import load_dotenv
+import logging
 
 def get_context_retriever_chain(vectordb):
     """
@@ -17,8 +17,6 @@ def get_context_retriever_chain(vectordb):
     Returns:
     - retrieval_chain: Context retriever chain for generating responses
     """
-    # Load environment variables (gets api keys for the models)
-    load_dotenv()
     # Initialize the model, set the retreiver and prompt for the chatbot
     llm = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.2, convert_system_message_to_human=True)
     retriever = vectordb.as_retriever()
@@ -45,9 +43,13 @@ def get_response(question, chat_history, vectordb):
     - response: The generated response
     - context: The context associated with the response
     """
-    chain = get_context_retriever_chain(vectordb)
-    response = chain.invoke({"input": question, "chat_history": chat_history})
-    return response["answer"], response["context"]
+    try:
+        chain = get_context_retriever_chain(vectordb)
+        response = chain.invoke({"input": question, "chat_history": chat_history})
+        return response["answer"], response["context"]
+    except Exception as e:
+        logging.exception("LLM error")
+        return f"Error getting response from LLM: {e}", []
 
 def chat(chat_history, vectordb):
     """
@@ -62,6 +64,7 @@ def chat(chat_history, vectordb):
     """
     user_query = st.chat_input("Ask a question:")
     if user_query is not None and user_query != "":
+        logging.info(f"User query: {user_query}")
         # Generate response based on user's query, chat history and vectorstore
         response, context = get_response(user_query, chat_history, vectordb)
         # Update chat history. The model uses up to 10 previous messages to incorporate into the response

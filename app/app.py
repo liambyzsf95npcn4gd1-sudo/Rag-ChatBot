@@ -1,33 +1,55 @@
 import streamlit as st
 import os
+from dotenv import load_dotenv
 from utils.save_docs import save_docs_to_vectordb
 from utils.session_state import initialize_session_state_variables
 from utils.prepare_vectordb import get_vectorstore
 from utils.chatbot import chat
+from utils.send_email import send_email
+import shutil
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Load environment variables
+load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = os.getenv("SMTP_PORT")
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASS = os.getenv("SMTP_PASS")
+MANAGER_EMAIL = os.getenv("MANAGER_EMAIL")
+
+
+# Check for required environment variables
+if not GOOGLE_API_KEY:
+    raise RuntimeError("Missing env var: GOOGLE_API_KEY — please create a .env file with it. You can get a key from https://aistudio.google.com/app/apikey")
 
 class ChatApp:
     """
-    A Streamlit application for chatting with PDF documents
+    A Streamlit application for chatting with PDF and XML documents.
 
-    This class encapsulates the functionality for uploading PDF documents, processing them,
+    This class encapsulates the functionality for uploading documents, processing them,
     and enabling users to chat with the documents using a chatbot. It handles the initialization
     of Streamlit configurations and session state variables, as well as the frontend for document
-    upload and chat interaction
+    upload and chat interaction.
     """
     def __init__(self):
         """
-        Initializes the ChatApp class
+        Initializes the ChatApp class.
 
         This method ensures the existence of the 'docs' folder, sets Streamlit page configurations,
-        and initializes session state variables
+        and initializes session state variables.
         """
+        logging.info("Starting ChatApp")
         # Ensure the docs folder exists
         if not os.path.exists("docs"):
             os.makedirs("docs")
 
         # Configurations and session state initialization
-        st.set_page_config(page_title="Chat with PDFS :books:")
-        st.title("Chat with PDFS :books:")
+        st.set_page_config(page_title="Chat with your Documents :books:")
+        st.title("Chat with your Documents :books:")
         initialize_session_state_variables(st)
         self.docs_files = st.session_state.processed_documents
 
@@ -47,10 +69,30 @@ class ChatApp:
                 st.text(", ".join(upload_docs))
             else:
                 st.info("No documents uploaded yet.")
-            st.subheader("Upload PDF documents")
-            pdf_docs = st.file_uploader("Select a PDF document and click on 'Process'", type=['pdf'], accept_multiple_files=True)
-            if pdf_docs:
-                save_docs_to_vectordb(pdf_docs, upload_docs)
+            st.subheader("Upload documents")
+            uploaded_files = st.file_uploader("Select a document and click on 'Process'", type=['pdf', 'xml'], accept_multiple_files=True)
+            if uploaded_files:
+                save_docs_to_vectordb(uploaded_files, upload_docs)
+
+            st.subheader("Database Management")
+            if st.button("Rebuild Index"):
+                with st.spinner("Rebuilding index..."):
+                    if os.path.exists("Vector_DB - Documents"):
+                        shutil.rmtree("Vector_DB - Documents")
+                    st.session_state.vectordb = get_vectorstore(upload_docs, from_session_state=False)
+                    st.success("Index rebuilt successfully.")
+                    st.rerun()
+
+            if st.session_state.chat_history and all([SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MANAGER_EMAIL]):
+                st.subheader("Send chat history")
+                recipient_email = st.text_input("Recipient email:")
+                if st.button("Send Email"):
+                    chat_history_str = "\n".join([f"{msg.type}: {msg.content}" for msg in st.session_state.chat_history])
+                    try:
+                        send_email("Chat History", chat_history_str, [recipient_email], from_email=SMTP_USER)
+                        st.success("Email sent successfully!")
+                    except Exception as e:
+                        st.error(f"Failed to send email: {e}")
 
         # Unlocks the chat when document is uploaded
         if self.docs_files or st.session_state.uploaded_pdfs:
