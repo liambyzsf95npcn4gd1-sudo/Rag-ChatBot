@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-from dotenv import load_dotenv
 from utils.save_docs import save_docs_to_vectordb
 from utils.session_state import initialize_session_state_variables
 from utils.prepare_vectordb import get_vectorstore
@@ -8,19 +7,10 @@ from utils.chatbot import chat
 from utils.send_email import send_email
 import shutil
 import logging
+from utils.config import GOOGLE_API_KEY, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MANAGER_EMAIL, CHROMA_PERSIST_DIR
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Load environment variables
-load_dotenv()
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-SMTP_HOST = os.getenv("SMTP_HOST")
-SMTP_PORT = os.getenv("SMTP_PORT")
-SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASS = os.getenv("SMTP_PASS")
-MANAGER_EMAIL = os.getenv("MANAGER_EMAIL")
-
 
 # Check for required environment variables
 if not GOOGLE_API_KEY:
@@ -77,9 +67,9 @@ class ChatApp:
             st.subheader("Database Management")
             if st.button("Rebuild Index"):
                 with st.spinner("Rebuilding index..."):
-                    if os.path.exists("Vector_DB - Documents"):
-                        shutil.rmtree("Vector_DB - Documents")
-                    st.session_state.vectordb = get_vectorstore(upload_docs, from_session_state=False)
+                    if os.path.exists(CHROMA_PERSIST_DIR):
+                        shutil.rmtree(CHROMA_PERSIST_DIR)
+                    st.session_state.vectordb = get_vectorstore(upload_docs, GOOGLE_API_KEY, CHROMA_PERSIST_DIR, from_session_state=False)
                     st.success("Index rebuilt successfully.")
                     st.rerun()
 
@@ -98,9 +88,9 @@ class ChatApp:
         if self.docs_files or st.session_state.uploaded_pdfs:
             # Check to see if a new document was uploaded to update the vectordb variable in the session state
             if len(upload_docs) > st.session_state.previous_upload_docs_length:
-                st.session_state.vectordb = get_vectorstore(upload_docs, from_session_state=True)
+                st.session_state.vectordb = get_vectorstore(upload_docs, GOOGLE_API_KEY, CHROMA_PERSIST_DIR, from_session_state=True)
                 st.session_state.previous_upload_docs_length = len(upload_docs)
-            st.session_state.chat_history = chat(st.session_state.chat_history, st.session_state.vectordb)
+            st.session_state.chat_history = chat(st.session_state.chat_history, st.session_state.vectordb, GOOGLE_API_KEY)
 
         # Locks the chat until a document is uploaded
         if not self.docs_files and not st.session_state.uploaded_pdfs:

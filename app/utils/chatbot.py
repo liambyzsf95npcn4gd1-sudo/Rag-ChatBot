@@ -7,7 +7,7 @@ from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 import logging
 
-def get_context_retriever_chain(vectordb):
+def get_context_retriever_chain(vectordb, google_api_key):
     """
     Create a context retriever chain for generating responses based on the chat history and vector database
 
@@ -18,7 +18,7 @@ def get_context_retriever_chain(vectordb):
     - retrieval_chain: Context retriever chain for generating responses
     """
     # Initialize the model, set the retreiver and prompt for the chatbot
-    llm = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.2, convert_system_message_to_human=True)
+    llm = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=google_api_key, temperature=0.2, convert_system_message_to_human=True)
     retriever = vectordb.as_retriever()
     prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a chatbot. You'll receive a prompt that includes a chat history and retrieved content from the vectorDB based on the user's question. Your task is to respond to the user's question using the information from the vectordb, relying as little as possible on your own knowledge. If for some reason you don't know the answer for the question, or the question cannot be answered because there's no context, ask the user for more details. Do not invent an answer. Answer the questions from this context: {context}"),
@@ -30,7 +30,7 @@ def get_context_retriever_chain(vectordb):
     retrieval_chain = create_retrieval_chain(retriever, chain)
     return retrieval_chain
 
-def get_response(question, chat_history, vectordb):
+def get_response(question, chat_history, vectordb, google_api_key):
     """
     Generate a response to the user's question based on the chat history and vector database
 
@@ -44,14 +44,14 @@ def get_response(question, chat_history, vectordb):
     - context: The context associated with the response
     """
     try:
-        chain = get_context_retriever_chain(vectordb)
+        chain = get_context_retriever_chain(vectordb, google_api_key)
         response = chain.invoke({"input": question, "chat_history": chat_history})
         return response["answer"], response["context"]
     except Exception as e:
         logging.exception("LLM error")
         return f"Error getting response from LLM: {e}", []
 
-def chat(chat_history, vectordb):
+def chat(chat_history, vectordb, google_api_key):
     """
     Handle the chat functionality of the application
 
@@ -66,7 +66,7 @@ def chat(chat_history, vectordb):
     if user_query is not None and user_query != "":
         logging.info(f"User query: {user_query}")
         # Generate response based on user's query, chat history and vectorstore
-        response, context = get_response(user_query, chat_history, vectordb)
+        response, context = get_response(user_query, chat_history, vectordb, google_api_key)
         # Update chat history. The model uses up to 10 previous messages to incorporate into the response
         chat_history = chat_history + [HumanMessage(content=user_query), AIMessage(content=response)]
         # Display source of the response on sidebar
