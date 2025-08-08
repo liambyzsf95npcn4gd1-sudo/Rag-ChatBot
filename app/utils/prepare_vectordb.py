@@ -3,20 +3,10 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 import os
-import xml.etree.ElementTree as ET
 import logging
 from pathlib import Path
-
-def parse_product_xml(path):
-    tree = ET.parse(path)
-    root = tree.getroot()
-    items = []
-    for prod in root.findall(".//product"):
-        prod_id = prod.findtext("id") or prod.get("id")
-        name = prod.findtext("name") or ""
-        desc = prod.findtext("description") or ""
-        items.append({"id": prod_id, "name": name.strip(), "description": desc.strip()})
-    return items
+from langchain_core.documents import Document
+from .xml_parser import parse_products_from_xml
 
 def extract_text(docs_files):
     """
@@ -34,7 +24,10 @@ def extract_text(docs_files):
         if doc_file.endswith(".pdf"):
             docs.extend(PyPDFLoader(file_path).load())
         elif doc_file.endswith(".xml"):
-            docs.extend(UnstructuredXMLLoader(file_path).load())
+            products = parse_products_from_xml(file_path)
+            for product in products:
+                content = f"ID: {product['id']}\nName: {product['name']}\nDescription: {product['description']}"
+                docs.append(Document(page_content=content, metadata={"source": doc_file}))
     return docs
 
 def get_text_chunks(docs):
